@@ -143,7 +143,7 @@ def iect(
 def fect(
     image: cv2.Mat,
     offset: int = None,
-    padding_scale: int = 3,
+    padding_scale: int = 2,
     flags: int = ECT_OMIT_ORIGIN & ECT_NONE & ECT_START_PX
 ) -> cv2.Mat:
     '''
@@ -157,7 +157,7 @@ def fect(
     image_modified = np.zeros((P*padding_scale, R*padding_scale, 1), dtype=complex)
  
     rho = np.linspace(1/R, 1, R) * np.log(R)
-    gamma = np.linspace(1/R, padding_scale, R*padding_scale) * np.log(R)
+    gamma = np.linspace(-1 + 1/R, padding_scale-1, R*padding_scale) * np.log(R)
 
     if flags & ECT_START_NY:
         raise NotImplementedError
@@ -178,30 +178,34 @@ def fect(
 
     start_idx = (padding_scale - 1) / 2
     end_idx = (padding_scale + 1) / 2
-    image_modified[int(P*start_idx) : int(P*end_idx), int(R*start_idx) : int(R*end_idx)] = np.conjugate(image) * np.exp(2 * rhos)
+    # image_modified[int(P*start_idx) : int(P*end_idx), int(R*start_idx) : int(R*end_idx)] = np.conjugate(image) * np.exp(2 * rhos)
+    image_modified[:P, :R] = np.conjugate(image) * np.exp(2* rhos)
     kernel = np.exp(-2 * np.pi * 1j * xs)
 
     if flags & ECT_ANTIALIAS:
         slope = .1
-        n_factor_x = 1
-        n_factor_y = 1
+        n_factor_x = .15
+        n_factor_y = 0#.15
         x_filter = sigmoid(1/slope*(np.log(R) - n_factor_x*abs(xs)))
         y_filter = sigmoid(1/slope*(np.log(R) - n_factor_y*abs(ys)))      
 
         kernel *= x_filter * y_filter
 
+    # cv2.imshow("ECT kernel", complex_to_hsv(kernel))
+
     kernel_transform = np.fft.fft2(kernel)
     image_transform = np.fft.fft2(image_modified)
     out = np.fft.ifft2(np.conjugate(image_transform) * kernel_transform)
 
-    cv2.imshow("CC result", complex_to_hsv(kernel))
+    # cv2.imshow("CC result", complex_to_hsv(out))
 
-    return out[int(P*start_idx) : int(P*end_idx), int(R*start_idx) : int(R*end_idx)][::-1, :]
+    # return out[int(P*start_idx) : int(P*end_idx), int(R*start_idx) : int(R*end_idx)][::-1, :]
+    return out[:P, :R][::-1, :]
 
 def ifect(
     image: cv2.Mat,
     offset: int = None,
-    padding_scale: int = 3,
+    padding_scale: int = 2,
     flags: int = ECT_OMIT_ORIGIN & ECT_NONE & ECT_START_PX
 ) -> cv2.Mat:
     '''
@@ -215,7 +219,7 @@ def ifect(
     image_modified = np.zeros((P*padding_scale, R*padding_scale, 1), dtype=complex)
  
     rho = np.linspace(1/R, 1, R) * np.log(R)
-    gamma = np.linspace(1/R, padding_scale, R*padding_scale) * np.log(R)
+    gamma = np.linspace(1/R-1, padding_scale-1, R*padding_scale) * np.log(R)
 
     if flags & ECT_START_NY:
         raise NotImplementedError
@@ -236,17 +240,20 @@ def ifect(
 
     start_idx = (padding_scale - 1) // 2
     end_idx = (padding_scale + 1) // 2
-    image_modified[P*start_idx : P*end_idx, R*start_idx : R*end_idx] = np.conjugate(image) * np.exp(2 * rhos)
+    # image_modified[P*start_idx : P*end_idx, R*start_idx : R*end_idx] = np.conjugate(image) * np.exp(2 * rhos)
+    image_modified[:P, :R] = np.conjugate(image) * np.exp(2 * rhos)
     kernel = np.exp(2 * np.pi * 1j * xs)
 
     if flags & ECT_ANTIALIAS:
         slope = .1
-        n_factor_x = .75
-        n_factor_y = .75
+        n_factor_x = .17
+        n_factor_y = 0
         x_filter = sigmoid(1/slope*(np.log(R) - n_factor_x*abs(xs)))
         y_filter = sigmoid(1/slope*(np.log(R) - n_factor_y*abs(ys)))      
 
         kernel *= x_filter * y_filter
+
+    # cv2.imshow("IECT kernel", complex_to_hsv(kernel))
 
     kernel_transform = np.fft.fft2(kernel)
     image_transform = np.fft.fft2(image_modified)
@@ -254,4 +261,5 @@ def ifect(
 
     # cv2.imshow("CC result", complex_to_hsv(out))
 
-    return out[P*start_idx : P*end_idx, R*start_idx : R*end_idx][::-1, :]
+    # return out[P*start_idx : P*end_idx, R*start_idx : R*end_idx][::-1, :]
+    return out[:P, :R][::-1, :]
