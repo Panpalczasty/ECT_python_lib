@@ -140,6 +140,68 @@ def iect(
     return out
 
 
+def xcorr(A : np.ndarray, B : np.ndarray):
+
+    A_t = np.fft.fft2(A)
+    B_t = np.fft.fft2(B)
+    out_t = np.conjugate(A_t) * B_t
+    return np.fft.ifft2(out_t)
+
+
+def make_vectors(shape: tuple[int, int], padding_scale: int, flags: int = ECT_OMIT_ORIGIN):
+
+    P, R = shape
+
+    gamma = np.linspace(-1+1/R, padding_scale-1, R*padding_scale) * np.log(R)
+    phi = np.linspace(0, padding_scale - 1/P, P*padding_scale) * 2 * np.pi
+
+    if flags & ECT_START_NY:
+        raise NotImplementedError
+
+    gammas, phis, _ = np.meshgrid(gamma, phi, 0)
+
+    if flags & ECT_OFFSET_ORIGIN:
+        raise NotImplementedError
+    else:
+        xs = np.exp(gammas) * np.cos(phis)
+        ys = np.exp(gammas) * np.sin(phis)
+
+    return gammas, phis, xs, ys
+
+
+def antialias(
+    kernel: np.ndarray, 
+    x_vector: np.ndarray, 
+    y_vector: np.ndarray,
+    x_factor: float,
+    y_factor: float,
+    x_threshold: float,
+    y_threshold: float,
+    slope: float):
+
+        x_filter = sigmoid(1/slope*(x_threshold - x_factor*abs(x_vector)))
+        y_filter = sigmoid(1/slope*(y_threshold - y_factor*abs(y_vector)))      
+        return kernel * x_filter * y_filter
+
+
+def mod_image(image: np.ndarray, padding_scale: int, flags: int = ECT_OMIT_ORIGIN):
+
+    P, R = image.shape[:2]
+    image_padded = np.zeros((P*padding_scale, R*padding_scale, 1), dtype=complex)
+
+    rho = np.linspace(1/R, 1, R) * np.log(R)
+    rhos, _, _ = np.meshgrid(rho, np.zeros((P, )), 0)
+
+    if flags & ECT_OFFSET_ORIGIN:
+        raise NotImplementedError
+        # image * (jacobian + offset shift)
+        # image_padded[:P, :R] = image * np.exp(2*rhos)
+    else:
+        image_padded[:P, :R] = np.conjugate(image) * np.exp(2*rhos)
+
+    return image_padded
+
+
 def fect(
     image: cv2.Mat,
     offset: int = None,
@@ -154,53 +216,22 @@ def fect(
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = image.shape[:2]
-    image_modified = np.zeros((P*padding_scale, R*padding_scale, 1), dtype=complex)
- 
-    rho = np.linspace(1/R, 1, R) * np.log(R)
-    gamma = np.linspace(-1 + 1/R, padding_scale-1, R*padding_scale) * np.log(R)
 
-    if flags & ECT_START_NY:
-        raise NotImplementedError
-        # phi = np.linspace(-V/4, 3*V/4-1, V)/V*2*np.pi
-    else:
-        phi = np.linspace(0, padding_scale - 1/P, P*padding_scale) * 2 * np.pi
-
-    rhos, _, _ = np.meshgrid(rho, phi[:P], 0)
-    gammas, phis, _ = np.meshgrid(gamma, phi, 0)
+    _, _, xs, ys = make_vectors((P,R), 2, flags)
 
     if flags & ECT_OFFSET_ORIGIN:
         raise NotImplementedError
-        # xs = np.exp(rhos)*np.cos(phis) - offset
-        # ys = np.exp(rhos)*np.sin(phis)
     else:
-        xs = np.exp(gammas) * np.cos(phis)
-        ys = np.exp(gammas) * np.sin(phis)
-
-    start_idx = (padding_scale - 1) / 2
-    end_idx = (padding_scale + 1) / 2
-    # image_modified[int(P*start_idx) : int(P*end_idx), int(R*start_idx) : int(R*end_idx)] = np.conjugate(image) * np.exp(2 * rhos)
-    image_modified[:P, :R] = np.conjugate(image) * np.exp(2* rhos)
-    kernel = np.exp(-2 * np.pi * 1j * xs)
+        kernel = np.exp(-2 * np.pi * 1j * xs)
 
     if flags & ECT_ANTIALIAS:
-        slope = .1
-        n_factor_x = .15
-        n_factor_y = 0#.15
-        x_filter = sigmoid(1/slope*(np.log(R) - n_factor_x*abs(xs)))
-        y_filter = sigmoid(1/slope*(np.log(R) - n_factor_y*abs(ys)))      
+        kernel = antialias(kernel, xs, ys, 0.15, 0, np.log(R), np.log(R), 0.1)
 
-        kernel *= x_filter * y_filter
+    image_padded = mod_image(image, padding_scale)
+    out = xcorr(image_padded, kernel)
 
-    # cv2.imshow("ECT kernel", complex_to_hsv(kernel))
-
-    kernel_transform = np.fft.fft2(kernel)
-    image_transform = np.fft.fft2(image_modified)
-    out = np.fft.ifft2(np.conjugate(image_transform) * kernel_transform)
-
-    # cv2.imshow("CC result", complex_to_hsv(out))
-
-    # return out[int(P*start_idx) : int(P*end_idx), int(R*start_idx) : int(R*end_idx)][::-1, :]
     return out[:P, :R][::-1, :]
+
 
 def ifect(
     image: cv2.Mat,
@@ -216,50 +247,17 @@ def ifect(
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = image.shape[:2]
-    image_modified = np.zeros((P*padding_scale, R*padding_scale, 1), dtype=complex)
- 
-    rho = np.linspace(1/R, 1, R) * np.log(R)
-    gamma = np.linspace(1/R-1, padding_scale-1, R*padding_scale) * np.log(R)
-
-    if flags & ECT_START_NY:
-        raise NotImplementedError
-        # phi = np.linspace(-V/4, 3*V/4-1, V)/V*2*np.pi
-    else:
-        phi = np.linspace(0, padding_scale - 1/P, P*padding_scale) * 2 * np.pi
-
-    rhos, _, _ = np.meshgrid(rho, phi[:P], 0)
-    gammas, phis, _ = np.meshgrid(gamma, phi, 0)
+    _, _, xs, ys = make_vectors((P, R), padding_scale, flags)
 
     if flags & ECT_OFFSET_ORIGIN:
         raise NotImplementedError
-        # xs = np.exp(rhos)*np.cos(phis) - offset
-        # ys = np.exp(rhos)*np.sin(phis)
     else:
-        xs = np.exp(gammas) * np.cos(phis)
-        ys = np.exp(gammas) * np.sin(phis)
-
-    start_idx = (padding_scale - 1) // 2
-    end_idx = (padding_scale + 1) // 2
-    # image_modified[P*start_idx : P*end_idx, R*start_idx : R*end_idx] = np.conjugate(image) * np.exp(2 * rhos)
-    image_modified[:P, :R] = np.conjugate(image) * np.exp(2 * rhos)
-    kernel = np.exp(2 * np.pi * 1j * xs)
+        kernel = np.exp(2 * np.pi * 1j * xs)
 
     if flags & ECT_ANTIALIAS:
-        slope = .1
-        n_factor_x = .17
-        n_factor_y = 0
-        x_filter = sigmoid(1/slope*(np.log(R) - n_factor_x*abs(xs)))
-        y_filter = sigmoid(1/slope*(np.log(R) - n_factor_y*abs(ys)))      
+        kernel = antialias(kernel, xs, ys, 0.17, 0, np.log(R), np.log(R), 0.1)
+        
+    image_padded = mod_image(image, padding_scale)
+    out = xcorr(image_padded, kernel)
 
-        kernel *= x_filter * y_filter
-
-    # cv2.imshow("IECT kernel", complex_to_hsv(kernel))
-
-    kernel_transform = np.fft.fft2(kernel)
-    image_transform = np.fft.fft2(image_modified)
-    out = np.fft.ifft2(np.conjugate(image_transform) * kernel_transform)
-
-    # cv2.imshow("CC result", complex_to_hsv(out))
-
-    # return out[P*start_idx : P*end_idx, R*start_idx : R*end_idx][::-1, :]
     return out[:P, :R][::-1, :]

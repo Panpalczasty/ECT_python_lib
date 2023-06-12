@@ -4,7 +4,7 @@ import ect
 import numpy as np
 import cv2
 
-img_dir = "sample_imgs/stripes1.png"
+img_dir = "sample_imgs/dupa.png"
 # img_dir = "kernels/u3-v6.png"
 
 def main():
