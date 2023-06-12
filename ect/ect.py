@@ -148,7 +148,7 @@ def xcorr(A : np.ndarray, B : np.ndarray):
     return np.fft.ifft2(out_t)
 
 
-def make_vectors(shape: tuple[int, int], padding_scale: int, flags: int = ECT_OMIT_ORIGIN):
+def make_kernel_vectors(shape: tuple[int, int], padding_scale: int, flags: int = ECT_START_PX):
 
     P, R = shape
 
@@ -160,14 +160,28 @@ def make_vectors(shape: tuple[int, int], padding_scale: int, flags: int = ECT_OM
 
     gammas, phis, _ = np.meshgrid(gamma, phi, 0)
 
-    if flags & ECT_OFFSET_ORIGIN:
-        raise NotImplementedError
-    else:
-        xs = np.exp(gammas) * np.cos(phis)
-        ys = np.exp(gammas) * np.sin(phis)
+    xs = np.exp(gammas) * np.cos(phis)
+    ys = np.exp(gammas) * np.sin(phis)
 
     return gammas, phis, xs, ys
 
+
+def make_image_vectors(shape: tuple[int, int], flags: int = ECT_START_PX):
+
+    P, R = shape
+
+    rho = np.linspace(1/R, 1, R) * np.log(R)
+    phi = np.linspace(0, 1 - 1/P, P) * 2 * np.pi
+
+    if flags & ECT_START_NY:
+        raise NotImplementedError
+
+    rhos, phis, _ = np.meshgrid(rho, phi, 0)
+
+    xs = np.exp(rhos) * np.cos(phis)
+    ys = np.exp(rhos) * np.sin(phis)
+
+    return rhos, phis, xs, ys
 
 def antialias(
     kernel: np.ndarray, 
@@ -184,27 +198,32 @@ def antialias(
         return kernel * x_filter * y_filter
 
 
-def mod_image(image: np.ndarray, padding_scale: int, flags: int = ECT_OMIT_ORIGIN):
+def mod_image(image: np.ndarray, padding_scale: int, ect_offset: int, flags: int = ECT_OMIT_ORIGIN | ECT_START_PX):
 
     P, R = image.shape[:2]
     image_padded = np.zeros((P*padding_scale, R*padding_scale, 1), dtype=complex)
 
-    rho = np.linspace(1/R, 1, R) * np.log(R)
-    rhos, _, _ = np.meshgrid(rho, np.zeros((P, )), 0)
+    rhos, _, xs, _ = make_image_vectors((P, R), flags)
 
     if flags & ECT_OFFSET_ORIGIN:
-        raise NotImplementedError
-        # image * (jacobian + offset shift)
-        # image_padded[:P, :R] = image * np.exp(2*rhos)
+        image_padded[:P, :R] = np.conjugate(image) * np.exp(2*rhos - 2*np.pi*1j*ect_offset*xs)
     else:
         image_padded[:P, :R] = np.conjugate(image) * np.exp(2*rhos)
 
     return image_padded
 
 
+def make_shift(image: np.ndarray, offset: int, ect_offset: int, flags: int = ECT_START_PX):
+
+    P, R = image.shape[:2]
+    _, _, xs, _ = make_image_vectors((P, R), flags)
+
+    return np.exp(2*np.pi*1j*offset*(xs - ect_offset))
+
 def fect(
     image: cv2.Mat,
     offset: int = None,
+    ect_offset: int = None,
     padding_scale: int = 2,
     flags: int = ECT_OMIT_ORIGIN & ECT_NONE & ECT_START_PX
 ) -> cv2.Mat:
@@ -212,30 +231,35 @@ def fect(
     Implementation of Fast ECT O(n^2*logn)
     '''
 
-    if flags & ECT_OFFSET_ORIGIN and offset is None:
+    if flags & ECT_OFFSET_ORIGIN and (offset is None or ect_offset is None):
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = image.shape[:2]
 
-    _, _, xs, ys = make_vectors((P,R), 2, flags)
+    _, _, xs, ys = make_kernel_vectors((P,R), 2, flags)
 
-    if flags & ECT_OFFSET_ORIGIN:
-        raise NotImplementedError
-    else:
-        kernel = np.exp(-2 * np.pi * 1j * xs)
+    kernel = np.exp(-2 * np.pi * 1j * xs)
 
     if flags & ECT_ANTIALIAS:
         kernel = antialias(kernel, xs, ys, 0.15, 0, np.log(R), np.log(R), 0.1)
 
-    image_padded = mod_image(image, padding_scale)
+    if flags & ECT_OFFSET_ORIGIN:
+        shift = make_shift(image, offset, ect_offset, flags)
+
+    image_padded = mod_image(image, padding_scale, ect_offset)
     out = xcorr(image_padded, kernel)
 
-    return out[:P, :R][::-1, :]
+    cv2.imshow("Correlation result", complex_to_hsv(out))
+
+    out = out[:P, :R][::-1, :]
+
+    return shift * out if flags & ECT_OFFSET_ORIGIN else out
 
 
 def ifect(
     image: cv2.Mat,
     offset: int = None,
+    ect_offset: int = None,
     padding_scale: int = 2,
     flags: int = ECT_OMIT_ORIGIN & ECT_NONE & ECT_START_PX
 ) -> cv2.Mat:
@@ -247,7 +271,7 @@ def ifect(
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = image.shape[:2]
-    _, _, xs, ys = make_vectors((P, R), padding_scale, flags)
+    _, _, xs, ys = make_kernel_vectors((P, R), padding_scale, flags)
 
     if flags & ECT_OFFSET_ORIGIN:
         raise NotImplementedError
@@ -257,7 +281,7 @@ def ifect(
     if flags & ECT_ANTIALIAS:
         kernel = antialias(kernel, xs, ys, 0.17, 0, np.log(R), np.log(R), 0.1)
         
-    image_padded = mod_image(image, padding_scale)
+    image_padded = mod_image(image, padding_scale, ect_offset)
     out = xcorr(image_padded, kernel)
 
     return out[:P, :R][::-1, :]

@@ -4,7 +4,7 @@ import ect
 import numpy as np
 import cv2
 
-img_dir = "sample_imgs/half.png"
+img_dir = "sample_imgs/text.png"
 # img_dir = "kernels/u3-v6.png"
 
 def main():
@@ -18,12 +18,13 @@ def main():
     
     filt = ect.sidelobe(log_img.shape[:2], offset = radius/10)
     filtered = np.uint8(filt * log_img)
-    
-    ect_img = ect.fect(filtered, flags=ect.ECT_ANTIALIAS)
+    filtered = log_img
+
+    ect_img = ect.fect(filtered, flags=ect.ECT_NONE)
 
     # ect_img = np.zeros_like(ect_img)
-    # ect_img[:, :1] = 255
-    # ect_img[:, 5] = 255
+    # ect_img[:, :3] = 255
+    # ect_img[50:60, 90:100] = 255
 
     iect_img = ect.ifect(ect_img, flags=ect.ECT_ANTIALIAS)
 
@@ -31,9 +32,10 @@ def main():
 
     ect_img = ect.ilogpolar(ect_img, dtype=complex, flags=ect.ECT_INTER_NONE)
     
-    inv = ect.norm_minmax(np.abs(iect_img), 0, 255)
+    # inv = ect.norm_minmax(np.abs(iect_img), 0, 255)
+    inv = ect.complex_to_hsv(iect_img)
 
-    cv2.imshow("Original image", ect.ilogpolar(filtered))
+    cv2.imshow("Original image", filtered)
 
     # cv2.imshow("Logpolar image", filtered)
     cv2.imshow("ECT of image", ect.ilogpolar(hsv))
