@@ -153,7 +153,7 @@ def make_kernel_vectors(shape: tuple[int, int], flags: int = ECT_START_PX):
     P, R = shape
 
     gamma = np.linspace(-1+1/R, 1, 2*R) * np.log(R)
-    phi = np.linspace(0, 1 - 1/P, P) * 2 * np.pi
+    phi = np.linspace(1/P, 1, P) * 2 * np.pi
 
     if flags & ECT_START_NY:
         phi -= 0.5 * np.pi
@@ -171,7 +171,7 @@ def make_image_vectors(shape: tuple[int, int], flags: int = ECT_START_PX):
     P, R = shape
 
     rho = np.linspace(1/R, 1, R) * np.log(R)
-    phi = np.linspace(0, 1 - 1/P, P) * 2 * np.pi
+    phi = np.linspace(1/P, 1, P) * 2 * np.pi
 
     if flags & ECT_START_NY:
         phi -= 0.5 * np.pi
