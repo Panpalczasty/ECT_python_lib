@@ -94,7 +94,7 @@ def logpolar(
     center: tuple[int, int] = None, 
     offset: int = None,
     dtype = np.uint8,
-    flags: int = ECT_INTER_LINEAR | ECT_OMIT_ORIGIN | ECT_START_PX
+    flags: int = ECT_INTER_LINEAR | ECT_OMIT_ORIGIN | ECT_START_NY
     ) -> cv2.Mat:
     """Performs logarithmic polar mapping on a source image. 
 
@@ -148,7 +148,13 @@ def logpolar(
                 sphi = math.sin(Kang*phi)
 
             if flags & ECT_OFFSET_ORIGIN:
-                x = rho_buf * cphi + cx - offset
+                x = rho_buf * cphi + cx# - offset
+
+                if x > cx:
+                    x -= offset
+                else:
+                    x += offset
+
                 y = rho_buf * sphi + cy
             else:
                 x = rho_buf * cphi + cx
@@ -173,7 +179,7 @@ def ilogpolar(
     radius: int = None,
     offset: int = None,
     dtype = np.uint8,
-    flags: int = ECT_INTER_LINEAR | ECT_OMIT_ORIGIN
+    flags: int = ECT_INTER_LINEAR | ECT_OMIT_ORIGIN | ECT_START_NY
     ) -> cv2.Mat:
     """Performs inverse logarithmic polar mapping on a source image. 
 
@@ -229,15 +235,16 @@ def ilogpolar(
             if flags & ECT_INCLUDE_ORIGIN:
                 rho = Kmag * math.log(xc**2 + yc**2 + 1)
             elif flags & ECT_OFFSET_ORIGIN:
-                rho = Kmag * math.log((xc+offset)**2 + yc**2 + 1e-6)
+                xoff = xc + offset if xc > 0 else xc - offset 
+                rho = Kmag * math.log(xoff**2 + yc**2 + 1e-6)
             else:
                 rho = Kmag * math.log(xc**2 + yc**2 + 1e-6)
 
             # phase
             if flags & ECT_OFFSET_ORIGIN and flags & ECT_START_NY:
-                phi = Kang * math.atan2(xc+offset, -yc)
+                phi = Kang * math.atan2(xoff, -yc)
             elif flags & ECT_OFFSET_ORIGIN:
-                phi = Kang * math.atan2(yc, xc+offset)
+                phi = Kang * math.atan2(yc, xoff)
             elif flags & ECT_START_NY:
                 phi = Kang * math.atan2(xc, -yc)
             else:

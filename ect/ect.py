@@ -20,7 +20,7 @@ ECT_START_NY = 64
 def ect(
     image: np.ndarray, 
     offset: int = None,
-    flags: int = ECT_ANTIALIAS | ECT_OMIT_ORIGIN | ECT_START_PX
+    flags: int = ECT_ANTIALIAS | ECT_OMIT_ORIGIN | ECT_START_NY
 ) -> np.ndarray:
     '''
     An O(n^4) direct implementation of ECT
@@ -79,7 +79,7 @@ def ect(
 def iect(
     image: np.ndarray,
     offset: int = None,
-    flags: int = ECT_ANTIALIAS | ECT_OMIT_ORIGIN | ECT_START_PX
+    flags: int = ECT_ANTIALIAS | ECT_OMIT_ORIGIN | ECT_START_NY
 ) -> np.ndarray:
     '''
     An O(n^4) implementation of IECT
@@ -140,20 +140,58 @@ def iect(
     return out
 
 
-def xcorr(A : np.ndarray, B : np.ndarray):
+def xcorr(A: np.ndarray, B: np.ndarray) -> np.ndarray:
+    '''
+    Calculates 2D cross-correlation between two ndarrays
+    using following equation:
 
+    xcorr(a, b) = F(A)' * F(B)
+
+    where F stands for Fourier transform
+    
+    Parameters
+    ----------
+    A, B : np.ndarray
+        Input arrays
+
+    Returns
+    -------
+    np.ndarray
+        Cross-correlation between two arrays
+    '''
     A_t = np.fft.fft2(A)
     B_t = np.fft.fft2(B)
     out_t = np.conjugate(A_t) * B_t
     return np.fft.ifft2(out_t)
 
 
-def make_kernel_vectors(shape: tuple[int, int], flags: int = ECT_START_PX):
+def make_kernel_vectors(
+    shape: tuple[int, int], 
+    flags: int = ECT_START_NY
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    '''
+    Generates base vectors
+    for a given shape, in range 
+    [1, log(R)] x (0, 2*pi)
+
+
+    Parameters
+    ----------
+    shape : tuple[int, int]
+        shape of kernel image
+    flags : int, optional
+        launch configuration, by default ECT_START_PX
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        Tuple of gamma, phi, x and y vectors
+    '''
 
     P, R = shape
 
-    gamma = np.linspace(-1+1/R, 1, 2*R) * np.log(R)
-    phi = np.linspace(1/P, 1, P) * 2 * np.pi
+    gamma = np.linspace(1/R, 2, 2*R) * np.log(R)
+    phi = np.linspace(1/P, 2, 2*P) * 2 * np.pi
 
     if flags & ECT_START_NY:
         phi -= 0.5 * np.pi
@@ -166,7 +204,25 @@ def make_kernel_vectors(shape: tuple[int, int], flags: int = ECT_START_PX):
     return gammas, phis, xs, ys
 
 
-def make_image_vectors(shape: tuple[int, int], flags: int = ECT_START_PX):
+def make_image_vectors(shape: tuple[int, int], flags: int = ECT_START_NY):
+    '''
+    Generates base vectors
+    for a given shape, in range 
+    [1, log(R)] x (0, 2*pi)
+
+
+    Parameters
+    ----------
+    shape : tuple[int, int]
+        shape of kernel image
+    flags : int, optional
+        launch configuration, by default ECT_START_PX
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        Tuple of gamma, phi, x and y vectors
+    '''
 
     P, R = shape
 
@@ -183,25 +239,64 @@ def make_image_vectors(shape: tuple[int, int], flags: int = ECT_START_PX):
 
     return rhos, phis, xs, ys
 
+
 def antialias(
     kernel: np.ndarray, 
-    x_vector: np.ndarray, 
-    y_vector: np.ndarray,
-    x_factor: float,
-    y_factor: float,
-    x_threshold: float,
-    y_threshold: float,
+    vectors: list[np.ndarray],
+    factors: list[float],
+    thresholds: list[float],
     slope: float):
+    '''
+    Applies antialiasing filter to a kernel
 
-        x_filter = sigmoid(1/slope*(x_threshold - x_factor*abs(x_vector)))
-        y_filter = sigmoid(1/slope*(y_threshold - y_factor*abs(y_vector)))      
-        return kernel * x_filter * y_filter
+    Parameters
+    ----------
+    kernel : np.ndarray
+        _description_
+    vectors : list[np.ndarray]
+        _description_
+    factors : list[np.ndarray]
+        _description_
+    thresholds : list[float]
+        _description_
+    slope : float
+        _description_
+
+    Returns
+    -------
+    _type_
+        _description_
+    '''
+    for v, fact, thr in zip(vectors, factors, thresholds):  
+        filt = sigmoid(1/slope*(thr-fact*abs(v)))
+        kernel *= filt
+
+    return kernel
 
 
-def mod_image(image: np.ndarray, ect_offset: int, flags: int = ECT_OMIT_ORIGIN | ECT_START_PX):
+def mod_image(
+    image: np.ndarray, 
+    ect_offset: int, 
+    flags: int = ECT_OMIT_ORIGIN | ECT_START_NY):
+    '''
+    Prepares imadd
 
+    Parameters
+    ----------
+    image : np.ndarray
+        _description_
+    ect_offset : int
+        _description_
+    flags : int, optional
+        _description_, by default ECT_OMIT_ORIGIN | ECT_START_PX
+
+    Returns
+    -------
+    _type_
+        _description_
+    '''
     P, R = image.shape[:2]
-    image_padded = np.zeros((P, 2*R, 1), dtype=complex)
+    image_padded = np.zeros((2*P, 2*R, 1), dtype=complex)
 
     rhos, _, xs, _ = make_image_vectors((P, R), flags)
 
@@ -213,18 +308,23 @@ def mod_image(image: np.ndarray, ect_offset: int, flags: int = ECT_OMIT_ORIGIN |
     return image_padded
 
 
-def make_shift(image: np.ndarray, offset: int, ect_offset: int, flags: int = ECT_START_PX):
+def make_shift(
+    image: np.ndarray, 
+    offset: int, 
+    ect_offset: int, 
+    flags: int = ECT_START_NY):
 
     P, R = image.shape[:2]
     _, _, xs, _ = make_image_vectors((P, R), flags)
 
     return np.exp(2*np.pi*1j*offset*(xs - ect_offset))
 
+
 def fect(
-    image: cv2.Mat,
+    image: cv2.Mat | np.ndarray,
     offset: int = None,
     ect_offset: int = None,
-    flags: int = ECT_OMIT_ORIGIN & ECT_NONE & ECT_START_PX
+    flags: int = ECT_OMIT_ORIGIN + ECT_ANTIALIAS + ECT_START_NY
 ) -> cv2.Mat:
     '''
     Implementation of Fast ECT O(n^2*logn)
@@ -234,21 +334,23 @@ def fect(
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = image.shape[:2]
-
-    _, _, xs, ys = make_kernel_vectors((P,R), flags)
-
-    kernel = np.exp(-2 * np.pi * 1j * xs)
+    rhos, phis, xs, _ = make_kernel_vectors((P, R))
+    kernel = np.exp(-2*np.pi*1j*xs)
 
     if flags & ECT_ANTIALIAS:
-        kernel = antialias(kernel, xs, ys, 0.15, 0, np.log(R), np.log(R), 0.1)
-
+        kernel = antialias(
+            kernel, 
+            vectors = [rhos, phis],
+            factors = [1.3, 1.3],
+            thresholds = [np.log(R), 2*np.pi],
+            slope = 0.1)
+        
     if flags & ECT_OFFSET_ORIGIN:
         shift = make_shift(image, offset, ect_offset, flags)
 
-    image_padded = mod_image(image, ect_offset)
+    image_padded = mod_image(image, ect_offset, flags)
     out = xcorr(image_padded, kernel)
-
-    out = out[:, :R][::-1, :]
+    out = out[:P, R:][::-1, :]
 
     return shift * out if flags & ECT_OFFSET_ORIGIN else out
 
@@ -257,8 +359,7 @@ def ifect(
     image: cv2.Mat,
     offset: int = None,
     ect_offset: int = None,
-    padding_scale: int = 2,
-    flags: int = ECT_OMIT_ORIGIN & ECT_NONE & ECT_START_PX
+    flags: int = ECT_OMIT_ORIGIN + ECT_ANTIALIAS + ECT_START_NY
 ) -> cv2.Mat:
     '''
     Implementation of Inverse FECT O(n^2)
@@ -268,18 +369,24 @@ def ifect(
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = image.shape[:2]
-    _, _, xs, ys = make_kernel_vectors((P, R), flags)
+    rhos, phis, xs, _ = make_kernel_vectors((P, R), flags)
 
-    kernel = np.exp(2 * np.pi * 1j * xs)
+    kernel = np.exp(-2 * np.pi * 1j * xs)
 
     if flags & ECT_ANTIALIAS:
-        kernel = antialias(kernel, xs, ys, 0.17, 0, np.log(R), np.log(R), 0.1)
+        kernel = antialias(
+            kernel,
+            vectors = [rhos, phis],
+            factors = [1.3, 0.66],
+            thresholds = [np.log(R), np.pi],
+            slope = 0.1)
         
     if flags & ECT_OFFSET_ORIGIN:
         shift = make_shift(image, offset, ect_offset, flags)
 
     image_padded = mod_image(image, ect_offset)
+
     out = xcorr(image_padded, kernel)
-    out = out[:, :R][::-1, :]
+    out = out[:P, R:][::-1, :]
 
     return shift * out if flags & ECT_OFFSET_ORIGIN else out

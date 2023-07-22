@@ -31,7 +31,7 @@ def sidelobe(
     shape: tuple[int,int],
     slope: float = 0.5, 
     offset: float = 20.0,
-    flags: int = ECT_OMIT_ORIGIN | ECT_GRAYSCALE | ECT_START_PX
+    flags: int = ECT_OMIT_ORIGIN | ECT_GRAYSCALE | ECT_START_NY
 ) -> np.ndarray:
     """Generates sidelobe filter in logpolar domain using
     the following equation
@@ -56,10 +56,6 @@ def sidelobe(
         rho = np.linspace(0, math.log(shape[1]), shape[1])
         m_rho, m_phi = np.meshgrid(rho, phi)
         m_x = (np.exp(m_rho)-1)*np.cos(m_phi)
-    elif flags & ECT_OFFSET_ORIGIN:
-        rho = np.linspace(1, math.log(shape[1]), shape[1])
-        m_rho, m_phi = np.meshgrid(rho, phi)
-        m_x = np.exp(m_rho)*np.cos(m_phi) - offset 
     else:
         rho = np.linspace(1, math.log(shape[1]), shape[1])
         m_rho, m_phi = np.meshgrid(rho, phi)
