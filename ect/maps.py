@@ -94,7 +94,7 @@ def logpolar(
     center: tuple[int, int] = None, 
     offset: int = None,
     dtype = np.uint8,
-    flags: int = ECT_INTER_LINEAR | ECT_OMIT_ORIGIN | ECT_START_NY
+    flags: int = ECT_INTER_LINEAR | ECT_OFFSET_ORIGIN | ECT_START_NY
     ) -> cv2.Mat:
     """Performs logarithmic polar mapping on a source image. 
 
@@ -179,7 +179,7 @@ def ilogpolar(
     radius: int = None,
     offset: int = None,
     dtype = np.uint8,
-    flags: int = ECT_INTER_LINEAR | ECT_OMIT_ORIGIN | ECT_START_NY
+    flags: int = ECT_INTER_LINEAR | ECT_OFFSET_ORIGIN | ECT_START_NY
     ) -> cv2.Mat:
     """Performs inverse logarithmic polar mapping on a source image. 
 

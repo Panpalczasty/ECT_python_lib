@@ -17,6 +17,10 @@ ECT_OFFSET_ORIGIN = 4
 ECT_START_PX = 32
 ECT_START_NY = 64
 
+# direction flags
+ECT_ECT = 128
+ECT_IECT = 256
+
 def ect(
     image: np.ndarray, 
     offset: int = None,
@@ -165,7 +169,7 @@ def xcorr(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     return np.fft.ifft2(out_t)
 
 
-def make_kernel_vectors(
+def kernel_vectors(
     shape: tuple[int, int], 
     flags: int = ECT_START_NY
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -204,7 +208,7 @@ def make_kernel_vectors(
     return gammas, phis, xs, ys
 
 
-def make_image_vectors(shape: tuple[int, int], flags: int = ECT_START_NY):
+def image_vectors(shape: tuple[int, int], img_offset: int, flags: int = ECT_START_NY):
     '''
     Generates base vectors
     for a given shape, in range 
@@ -236,6 +240,10 @@ def make_image_vectors(shape: tuple[int, int], flags: int = ECT_START_NY):
 
     xs = np.exp(rhos) * np.cos(phis)
     ys = np.exp(rhos) * np.sin(phis)
+
+    if flags & ECT_OFFSET_ORIGIN:
+        xs[:P, :] -= img_offset
+        xs[P:, :] += img_offset
 
     return rhos, phis, xs, ys
 
@@ -276,8 +284,9 @@ def antialias(
 
 def mod_image(
     image: np.ndarray, 
+    img_offset: int,
     ect_offset: int, 
-    flags: int = ECT_OMIT_ORIGIN | ECT_START_NY):
+    flags: int = ECT_OMIT_ORIGIN | ECT_START_NY | ECT_ECT):
     '''
     Prepares imadd
 
@@ -298,95 +307,113 @@ def mod_image(
     P, R = image.shape[:2]
     image_padded = np.zeros((2*P, 2*R, 1), dtype=complex)
 
-    rhos, _, xs, _ = make_image_vectors((P, R), flags)
+    rhos, _, xs, _ = image_vectors((P, R), img_offset, flags)
+
+    ect_factor = 1 if flags & ECT_ECT else -1
 
     if flags & ECT_OFFSET_ORIGIN:
-        image_padded[:P, :R] = np.conjugate(image) * np.exp(2*rhos - 2*np.pi*1j*ect_offset*xs)
+        image_padded[:P, :R] = np.conjugate(image) * \
+            np.exp(2*rhos - ect_factor*2*np.pi*1j*ect_offset*xs/R)
     else:
         image_padded[:P, :R] = np.conjugate(image) * np.exp(2*rhos)
 
     return image_padded
 
 
-def make_shift(
+def shift(
     image: np.ndarray, 
-    offset: int, 
+    img_offset: int, 
     ect_offset: int, 
-    flags: int = ECT_START_NY):
+    flags: int = ECT_START_NY | ECT_ECT):
 
     P, R = image.shape[:2]
-    _, _, xs, _ = make_image_vectors((P, R), flags)
+    _, _, xs, _ = image_vectors((P, R), ect_offset, flags)
 
-    return np.exp(2*np.pi*1j*offset*(xs - ect_offset))
+    ect_factor = 1 if flags & ECT_ECT else -1
+
+    return np.exp(ect_factor*2*np.pi*1j*img_offset*xs/R)
 
 
 def fect(
     image: cv2.Mat | np.ndarray,
-    offset: int = None,
+    img_offset: int = None,
     ect_offset: int = None,
-    flags: int = ECT_OMIT_ORIGIN + ECT_ANTIALIAS + ECT_START_NY
-) -> cv2.Mat:
+    flags: int = ECT_OFFSET_ORIGIN + ECT_ANTIALIAS + ECT_START_NY,
+    aa_factors: list[float] = [1.5, 0],
+    aa_thresholds: list[float] = None
+    ) -> cv2.Mat:
     '''
     Implementation of Fast ECT O(n^2*logn)
     '''
 
-    if flags & ECT_OFFSET_ORIGIN and (offset is None or ect_offset is None):
+    flags |= ECT_ECT
+
+    if flags & ECT_OFFSET_ORIGIN and (img_offset is None or ect_offset is None):
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = image.shape[:2]
-    rhos, phis, xs, _ = make_kernel_vectors((P, R))
+    rhos, phis, xs, ys = kernel_vectors((P, R))
     kernel = np.exp(-2*np.pi*1j*xs)
+    
+    if aa_thresholds is None:
+        aa_thresholds = [np.log(R), 2*np.pi]
 
     if flags & ECT_ANTIALIAS:
         kernel = antialias(
             kernel, 
             vectors = [rhos, phis],
-            factors = [1.3, 1.3],
-            thresholds = [np.log(R), 2*np.pi],
+            factors = aa_factors,
+            thresholds = aa_thresholds,
             slope = 0.1)
         
     if flags & ECT_OFFSET_ORIGIN:
-        shift = make_shift(image, offset, ect_offset, flags)
+        shift_ = shift(image, img_offset, ect_offset, flags)
 
-    image_padded = mod_image(image, ect_offset, flags)
+    image_padded = mod_image(image, img_offset, ect_offset, flags)
     out = xcorr(image_padded, kernel)
-    out = out[:P, R:][::-1, :]
+    out = out[:P, R:]
 
-    return shift * out if flags & ECT_OFFSET_ORIGIN else out
+    return shift_ * out if flags & ECT_OFFSET_ORIGIN else out
 
 
 def ifect(
-    image: cv2.Mat,
-    offset: int = None,
+    ect: cv2.Mat,
+    img_offset: int = None,
     ect_offset: int = None,
-    flags: int = ECT_OMIT_ORIGIN + ECT_ANTIALIAS + ECT_START_NY
+    flags: int = ECT_OFFSET_ORIGIN + ECT_ANTIALIAS + ECT_START_NY,
+    aa_factors: list[float] = [1.4, 1.25],
+    aa_thresholds: list[float] = None
 ) -> cv2.Mat:
     '''
     Implementation of Inverse FECT O(n^2)
     '''
 
-    if flags & ECT_OFFSET_ORIGIN and (offset is None or ect_offset is None):
+    flags |= ECT_IECT
+
+    if flags & ECT_OFFSET_ORIGIN and (img_offset is None or ect_offset is None):
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
-    P, R = image.shape[:2]
-    rhos, phis, xs, _ = make_kernel_vectors((P, R), flags)
+    P, R = ect.shape[:2]
+    rhos, phis, xs, _ = kernel_vectors((P, R), flags)
 
-    kernel = np.exp(-2 * np.pi * 1j * xs)
+    kernel = np.exp(2 * np.pi * 1j * xs)
+    
+    if aa_thresholds is None:
+        aa_thresholds = [np.log(R), 2*np.pi]
 
     if flags & ECT_ANTIALIAS:
         kernel = antialias(
-            kernel,
+            kernel, 
             vectors = [rhos, phis],
-            factors = [1.3, 0.66],
-            thresholds = [np.log(R), np.pi],
+            factors = aa_factors,
+            thresholds = aa_thresholds,
             slope = 0.1)
         
     if flags & ECT_OFFSET_ORIGIN:
-        shift = make_shift(image, offset, ect_offset, flags)
+        shift_ = shift(ect, ect_offset, img_offset, flags)
 
-    image_padded = mod_image(image, ect_offset)
-
+    image_padded = mod_image(ect, ect_offset, img_offset, flags)
     out = xcorr(image_padded, kernel)
-    out = out[:P, R:][::-1, :]
+    out = out[:P, R:]
 
-    return shift * out if flags & ECT_OFFSET_ORIGIN else out
+    return shift_ * out if flags & ECT_OFFSET_ORIGIN else out
