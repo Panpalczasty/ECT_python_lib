@@ -47,7 +47,10 @@ class DummyMatcher(Matcher):
         return np.zeros_like(image_ect)
     
     
+@dataclass    
 class BasicMatcher(Matcher):
+
+    bp_thresh: float = 0.2
 
     def match_image(self, image_ect: ndarray, template_ect: ndarray) -> ndarray:
         
@@ -57,22 +60,21 @@ class BasicMatcher(Matcher):
         tr = np.real(template_ect)
         ti = np.imag(template_ect)
 
-        phase = (ir*ti - ii*tr)/(ii*ti + tr*ir + 10e-6)
+        phase = (ir*ti - ii*tr)/(ii*ti + tr*ir + 10e-12)
         # phase = (ii*ti + tr*ir)
 
-        thresh = 0
-        # apply band-bass filter (from ect.filt tho)
         template_abs = ect.norm_minmax(np.abs(template_ect), 0, 1, dtype=np.float64)
-
         bp_filter = np.zeros_like(template_abs)
-        bp_filter[template_abs > thresh] = 1
+        bp_filter[template_abs > self.bp_thresh] = 1
 
         # return bp_filter
         return np.exp(1j*np.arctan(phase)) * bp_filter
 
+
     def match_bbox(self, image_ect:ndarray, template_ect:ndarray) -> ndarray:
         return super().match_bbox(image, template)
-    
+
+
     def match_numeric(self, image_ect:ndarray, template_ect:ndarray) -> tuple[float, float, float]:
         
         match_result = self.match_image(image_ect, template_ect)

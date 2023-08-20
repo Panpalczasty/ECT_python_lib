@@ -37,13 +37,39 @@ class ImageLoader(Loader):
 
 
 @dataclass
-class FilepathLoader(ImageLoader):
+class FilepathLoader(Loader):
 
-    filepath: None = None
+    filepath: str | None = None
+    image: ndarray | None = None
+    radius: int = 200
+    offset: float = 20
 
     def load(self, filepath: str) -> ndarray:
-        self.filepath = filepath
-        return super().load()
+
+        self.image = cv2.imread(filepath)
+        self.image = cv2.cvtColor(self.image, code=cv2.COLOR_BGR2GRAY)
+        self.image = ect.logpolar(self.image, radius=self.radius, offset=self.offset)
+
+        sidelobe = ect.sidelobe(self.image.shape[:2], offset=self.offset)
+
+        self.image = self.image * sidelobe
+
+        return self.image
+
+@dataclass
+class LogpolarLoader(Loader):
+
+    radius: int = 200
+    offset: int = 10
+
+    def load(self, image: ndarray) -> ndarray:
+        
+        image = cv2.cvtColor(image, code=cv2.COLOR_BGR2GRAY)
+        image = ect.logpolar(image, radius=self.radius, offset=self.offset)
+
+        sidelobe = ect.sidelobe(image.shape[:2], offset=self.offset)
+
+        return image * sidelobe    
 
 # @dataclass
 # class SequenceLoader(ImageLoader):

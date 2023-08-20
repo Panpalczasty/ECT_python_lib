@@ -163,10 +163,10 @@ def xcorr(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     np.ndarray
         Cross-correlation between two arrays
     '''
-    A_t = np.fft.fft2(A)
-    B_t = np.fft.fft2(B)
+    A_t = np.fft.fft2(A, axes=(0, 1))
+    B_t = np.fft.fft2(B, axes=(0, 1))
     out_t = np.conjugate(A_t) * B_t
-    return np.fft.ifft2(out_t)
+    return np.fft.ifft2(out_t, axes=(0,1))
 
 
 def kernel_vectors(
@@ -194,7 +194,7 @@ def kernel_vectors(
 
     P, R = shape
 
-    gamma = np.linspace(1/R, 2, 2*R) * np.log(R)
+    gamma = np.linspace(-1+1/R, 1, 2*R) * np.log(R)
     phi = np.linspace(1/P, 2, 2*P) * 2 * np.pi
 
     if flags & ECT_START_NY:
@@ -241,9 +241,9 @@ def image_vectors(shape: tuple[int, int], img_offset: int, flags: int = ECT_STAR
     xs = np.exp(rhos) * np.cos(phis)
     ys = np.exp(rhos) * np.sin(phis)
 
-    if flags & ECT_OFFSET_ORIGIN:
-        xs[:P, :] -= img_offset
-        xs[P:, :] += img_offset
+    # if flags & ECT_OFFSET_ORIGIN:
+        # xs[:P//2, :] -= img_offset
+        # xs[P//2:, :] += img_offset
 
     return rhos, phis, xs, ys
 
@@ -339,8 +339,9 @@ def fect(
     img_offset: int = None,
     ect_offset: int = None,
     flags: int = ECT_OFFSET_ORIGIN + ECT_ANTIALIAS + ECT_START_NY,
-    aa_factors: list[float] = [1.5, 0],
-    aa_thresholds: list[float] = None
+    aa_factors: list[float] = [.27, .15],
+    aa_thresholds: list[float] = None,
+    aa_slope: float = 0.25
     ) -> cv2.Mat:
     '''
     Implementation of Fast ECT O(n^2*logn)
@@ -361,17 +362,17 @@ def fect(
     if flags & ECT_ANTIALIAS:
         kernel = antialias(
             kernel, 
-            vectors = [rhos, phis],
+            vectors = [xs, ys],
             factors = aa_factors,
             thresholds = aa_thresholds,
-            slope = 0.1)
+            slope = aa_slope)
         
     if flags & ECT_OFFSET_ORIGIN:
         shift_ = shift(image, img_offset, ect_offset, flags)
 
     image_padded = mod_image(image, img_offset, ect_offset, flags)
     out = xcorr(image_padded, kernel)
-    out = out[:P, R:]
+    out = out[:P, :R]
 
     return shift_ * out if flags & ECT_OFFSET_ORIGIN else out
 
@@ -381,8 +382,9 @@ def ifect(
     img_offset: int = None,
     ect_offset: int = None,
     flags: int = ECT_OFFSET_ORIGIN + ECT_ANTIALIAS + ECT_START_NY,
-    aa_factors: list[float] = [1.4, 1.25],
-    aa_thresholds: list[float] = None
+    aa_factors: list[float] = [.27, .15],
+    aa_thresholds: list[float] = None,
+    aa_slope: float = 0.25
 ) -> cv2.Mat:
     '''
     Implementation of Inverse FECT O(n^2)
@@ -394,7 +396,7 @@ def ifect(
         raise AttributeError("Offset is required in ECT_OFFSET_ORIGIN mode.")
 
     P, R = ect.shape[:2]
-    rhos, phis, xs, _ = kernel_vectors((P, R), flags)
+    rhos, phis, xs, ys = kernel_vectors((P, R), flags)
 
     kernel = np.exp(2 * np.pi * 1j * xs)
     
@@ -404,16 +406,16 @@ def ifect(
     if flags & ECT_ANTIALIAS:
         kernel = antialias(
             kernel, 
-            vectors = [rhos, phis],
+            vectors = [xs, ys],
             factors = aa_factors,
             thresholds = aa_thresholds,
-            slope = 0.1)
+            slope = aa_slope)
         
     if flags & ECT_OFFSET_ORIGIN:
         shift_ = shift(ect, ect_offset, img_offset, flags)
 
     image_padded = mod_image(ect, ect_offset, img_offset, flags)
     out = xcorr(image_padded, kernel)
-    out = out[:P, R:]
+    out = out[:P, :R]
 
     return shift_ * out if flags & ECT_OFFSET_ORIGIN else out

@@ -39,8 +39,8 @@ class BasicTracker(Tracker):
     matcher: Matcher | None = None
     
     radius: float = 200
-    offset: float = 20
-    ect_offset: float = 40 
+    offset: float = 10
+    ect_offset: float = 20
 
     result: np.ndarray | None = None
     ect_template: np.ndarray | None = None
@@ -63,7 +63,9 @@ class BasicTracker(Tracker):
             )
         
         if self.matcher is None:
-            self.matcher = BasicMatcher()
+            self.matcher = BasicMatcher(
+                bp_thresh = 0.1
+            )
 
         self.ect_template = self.loader.load()
         self.ect_template = self.transformer.transform(self.ect_template)
@@ -77,7 +79,7 @@ class BasicTracker(Tracker):
 
         self.match_result = self.matcher.match_numeric(ect_image, self.ect_template)
 
-        # self.result = self.transformer.invert(self.result)
+        self.result = self.transformer.invert(self.result)
 
         return self.result
     
@@ -88,7 +90,7 @@ class BasicTracker(Tracker):
         print(f"{radius=}, {shift=}, {value=:2f}")
 
         result_hsv = ect.complex_to_hsv(self.result)
-        # result_hsv = ect.ilogpolar(result_hsv, radius=self.radius, offset=self.offset)
+        result_hsv = ect.ilogpolar(result_hsv, offset=self.offset)
         plt.figure(figsize=(10, 10))
         plt.imshow(result_hsv)
         plt.title(label)
