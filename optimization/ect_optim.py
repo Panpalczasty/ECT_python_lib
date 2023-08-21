@@ -200,30 +200,50 @@ class ECTFilterTuner(ECTOptimizer):
         loss_fcn: Callable[[np.ndarray, np.ndarray], float],
         n_knots: int = 20):
 
-        self.params = n_knots
+        self.params = 2*n_knots
         self.ect_offset = ect_offset
         super().__init__(image_path, radius, img_offset, loss_fcn)
 
 
     def start(self, N):
-        return np.r_[ect.DEFAULT_FNF, ect.DEFAULT_SNF]
+
+        aa_params = np.array([0.27, 0.15, 0.27, 0.15, 0.25, 0.25])
+
+        return np.r_[ect.DEFAULT_FNF, ect.DEFAULT_SNF, aa_params]
 
 
     def transform(self, params: list[float]) -> np.ndarray:
 
         fnf_values = params[:self.params//2]
-        snf_values = params[self.params//2:]    
+        snf_values = params[self.params//2:self.params]
+        aa_params = params[self.params:]
+        ect_aa = aa_params[:2]
+        iect_aa = aa_params[2:4]
+        ect_slope = aa_params[4]
+        iect_slope = aa_params[5]
 
         dsize = self.image.shape[:2]
         fnf = ect.freqnorm(dsize, self.radius, fnf_values)
         snf = ect.spacenorm(dsize, self.radius, snf_values)
-        ang = ect.angular_filter(dsize)
+        # ang = ect.angular_filter(dsize)
 
-        self.ect_img = ect.fect(self.image, self.img_offset, self.ect_offset)
+        self.ect_img = ect.fect(
+            self.image, 
+            self.img_offset, 
+            self.ect_offset,
+            aa_factors = ect_aa,
+            aa_slope = ect_slope)
+        
         self.ect_img = self.ect_img * fnf
         
-        self.inv = ect.ifect(self.ect_img, self.img_offset, self.ect_offset)
-        self.inv = self.inv * snf * ang
+        self.inv = ect.ifect(
+            self.ect_img, 
+            self.img_offset, 
+            self.ect_offset,
+            aa_factors = iect_aa,
+            aa_slope = iect_slope)
+        
+        self.inv = self.inv * snf
 
         return self.inv
     
@@ -386,6 +406,56 @@ class ECTAngularSNF(ECTOptimizer):
         ang = ect.angular_filter(dsize, params)
 
         self.inv = self.inv * snf * ang
+
+        return self.inv
+
+
+    def optim(self, **kwargs) -> optim.OptimizeResult:
+
+        result = optim.minimize(
+            fun = self.loss,
+            x0 = self.start(self.params),
+            callback = self.callback,
+            **kwargs
+        )
+
+        return result
+    
+
+class ECTAngularFNF(ECTOptimizer):
+
+    def __init__(
+        self, 
+        image_path: str, 
+        radius: int, 
+        img_offset: float,
+        ect_offset: float, 
+        n_knots: float,
+        loss_fcn: Callable[[np.ndarray, np.ndarray], float]):
+
+        self.params = n_knots
+        self.ect_offset = ect_offset
+        super().__init__(image_path, radius, img_offset, loss_fcn)
+
+
+    def start(self, N):
+        return np.ones((N,))
+    
+
+    def transform(self, params: list[float]) -> np.ndarray:
+
+        dsize = self.image.shape[:2]
+        fnf = ect.freqnorm(dsize, self.radius)
+        snf = ect.spacenorm(dsize, self.radius)
+        ang = ect.freqnorm_phi(dsize, params)
+
+
+        self.ect_img = ect.fect(self.image, self.img_offset, self.ect_offset)
+        self.ect_img = self.ect_img * fnf * ang
+        
+        self.inv = ect.ifect(self.ect_img, self.img_offset, self.ect_offset)
+
+        self.inv = self.inv * snf
 
         return self.inv
 

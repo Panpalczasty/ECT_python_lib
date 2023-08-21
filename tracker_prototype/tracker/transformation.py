@@ -76,6 +76,6 @@ class FilteredTransformation(Transformation):
             radius = self.radius
 
         snf = ect.spacenorm(image.shape[:2], radius)
-        ang = ect.angular_filter(image.shape[:2])
+        # ang = ect.angular_filter(image.shape[:2])
 
-        return image * snf * ang
+        return image * snf #* ang

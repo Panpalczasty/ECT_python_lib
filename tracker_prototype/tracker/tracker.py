@@ -40,7 +40,7 @@ class BasicTracker(Tracker):
     
     radius: float = 200
     offset: float = 10
-    ect_offset: float = 20
+    ect_offset: float = 10
 
     result: np.ndarray | None = None
     ect_template: np.ndarray | None = None
@@ -90,7 +90,7 @@ class BasicTracker(Tracker):
         print(f"{radius=}, {shift=}, {value=:2f}")
 
         result_hsv = ect.complex_to_hsv(self.result)
-        result_hsv = ect.ilogpolar(result_hsv, offset=self.offset)
+        result_hsv = ect.ilogpolar(result_hsv, offset = 0)
         plt.figure(figsize=(10, 10))
         plt.imshow(result_hsv)
         plt.title(label)

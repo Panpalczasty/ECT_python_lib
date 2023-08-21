@@ -22,19 +22,20 @@ ECT_START_NY = 64
 #        0.78169232, 0.83761392, 0.88578629, 0.92918131, 0.96587902,
 #        0.98862107, 1.00247915, 0.99946212]
 
-DEFAULT_ANG = [1, 1]
+DEFAULT_SPHI = [1, 1]
+DEFAULT_FPHI = [1, 1]
 
 # tune this on whitenoise
-DEFAULT_FNF = [2.23546183, 0.02089067, 0.59506666, 0.24344334, 0.3490346 ,
-       0.24784119, 0.22250579, 0.20775864, 0.21038973, 0.22876757,
-       0.33631792, 0.27018188, 0.28442893, 0.30625369, 0.32004706,
-       0.30109776, 0.28106156, 0.27342773, 0.26489311, 0.32855774]
+DEFAULT_FNF = [ 3.30231846, -2.4676382 ,  0.22325255,  0.34855757,  0.42951409,
+        0.34650045,  0.42561892,  0.29941205,  0.36822618,  0.33619255,
+        0.40713499,  0.34811043,  0.35251371,  0.40478174,  0.34627828,
+        0.36501672,  0.34235195,  0.35890943,  0.33902837,  0.46787934]
 
 # tune this on white
-DEFAULT_SNF = [-0.12253074,  0.08635138, -0.11990753,  0.15919272, -0.12419914,
-        2.7911736 ,  3.51461431,  3.45581535,  3.45001963,  3.41822584,
-        3.39092369,  3.35342852,  3.29070184,  3.2462659 ,  3.22734647,
-        3.28645839,  3.25459136,  3.24035778,  3.25257675,  3.29658477]
+DEFAULT_SNF = [ 0.02937074, -0.01873316,  0.05058855, -0.14945052,  0.82520784,
+        2.86540569,  3.36997216,  3.38840759,  3.39632183,  3.39931343,
+        3.39281345,  3.38907285,  3.37732353,  3.38154925,  3.38200081,
+        3.38235746,  3.38204245,  3.37758453,  3.36036744,  3.49347014]
 
 def sigmoid(x: float) -> float:
     """Calculated sigmoid function of an x
@@ -118,11 +119,6 @@ def freqnorm(
     radius: int,
     knot_values: Iterable[float] = DEFAULT_FNF):
 
-
-    if knot_values is None:
-        knot_values = DEFAULT_FNF
-
-
     # knot_zeros = [0] * int(len(knot_values))
     # knot_values = np.r_[knot_zeros, knot_values]
 
@@ -144,21 +140,32 @@ def splinefilt_rho(dsize, radius, knot_values, num_knots):
     return polyfilt(rhos, extrapolate=True)
 
 
-def angular_filter(dsize, knot_values: list = DEFAULT_ANG):
+def splinefilt_phi(dsize, knot_values, num_knots):
 
-    # print(f"{knot_values=}")
-    # knot_values[-1] = knot_values[0]
-    knot_values = list(knot_values)
-    knot_values += [1] + knot_values[::-1]
-    knot_values += knot_values
-    num_knots = len(knot_values)
-    # print(f"{knot_values=}")
+    if len(knot_values) != num_knots:
+            raise ValueError(f"Knot values array of invalid shape: needed {num_knots}, got {len(knot_values)}.")
+
+    # knot_values = list(knot_values)
+    # knot_values += [1] + knot_values[::-1]
+    # knot_values += knot_values
+    # num_knots = len(knot_values)
+
     knots = np.linspace(0, 1, num_knots)
-    # print(knots)
+    
+    polyfilt = CubicSpline(x=knots, y=knot_values, bc_type='natural')
+
     _, phis = vector_gen(shape=dsize)
 
-    polyfilt = CubicSpline(x=knots, y=knot_values, bc_type='periodic')
     return polyfilt(phis)
+
+
+def spacenorm_phi(dsize, knot_values: list = DEFAULT_SPHI):
+    return splinefilt_phi(dsize, knot_values, len(knot_values))
+
+
+def freqnorm_phi(dsize, knot_values: list = DEFAULT_FPHI):
+    return np.exp(splinefilt_phi(dsize, knot_values, len(knot_values)))
+
 
 def vector_gen(shape: tuple[int, int]):
     '''

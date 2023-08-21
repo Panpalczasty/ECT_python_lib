@@ -60,15 +60,16 @@ class BasicMatcher(Matcher):
         tr = np.real(template_ect)
         ti = np.imag(template_ect)
 
-        phase = (ir*ti - ii*tr)/(ii*ti + tr*ir + 10e-12)
-        # phase = (ii*ti + tr*ir)
+        yy = (ir*ti - ii*tr)#/(ii*ti + tr*ir + 10e-12)
+        xx = (ii*ti + tr*ir)
 
         template_abs = ect.norm_minmax(np.abs(template_ect), 0, 1, dtype=np.float64)
         bp_filter = np.zeros_like(template_abs)
         bp_filter[template_abs > self.bp_thresh] = 1
 
         # return bp_filter
-        return np.exp(1j*np.arctan(phase)) * bp_filter
+        # return np.exp(1j*np.arctan(phase)) * bp_filter
+        return np.exp(1j*np.arctan2(yy,xx)) * bp_filter
 
 
     def match_bbox(self, image_ect:ndarray, template_ect:ndarray) -> ndarray:
