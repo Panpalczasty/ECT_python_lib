@@ -60,7 +60,7 @@ class BasicMatcher(Matcher):
         tr = np.real(template_ect)
         ti = np.imag(template_ect)
 
-        yy = (ir*ti - ii*tr)#/(ii*ti + tr*ir + 10e-12)
+        yy = (- ir*ti + ii*tr)#/(ii*ti + tr*ir + 10e-12)
         xx = (ii*ti + tr*ir)
 
         template_abs = ect.norm_minmax(np.abs(template_ect), 0, 1, dtype=np.float64)
