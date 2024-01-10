@@ -18,15 +18,3 @@ def complex_to_hsv(complex_image: np.ndarray) -> cv2.Mat:
     bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
     return bgr
-
-
-def norm_minmax(
-        image: np.ndarray, 
-        norm_min: float, 
-        norm_max: float, 
-        dtype: type = np.uint8):
-    '''
-    
-    '''
-    norm_base = (image - np.min(image))/(np.max(image) - np.min(image))
-    return dtype((norm_base*(norm_max-norm_min)+norm_min))
